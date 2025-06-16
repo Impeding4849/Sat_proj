@@ -1,0 +1,7 @@
+model_name,target_variable,mse,r2
+XGBoost,mean_revisit_time_hr,0.5261807908093679,0.8719264372423168
+XGBoost,mean_achieved_quality,0.0004067443886211,0.8330131439335984
+NeuralNetwork,mean_revisit_time_hr,0.4001008183823377,0.9026145800692
+NeuralNetwork,mean_achieved_quality,0.0002348835603888,0.9035697396490988
+QuantumHybrid,mean_revisit_time_hr,0.4362057800270856,0.8953113254485237
+QuantumHybrid,mean_achieved_quality,0.0002609958624879256,0.8918717994207733
