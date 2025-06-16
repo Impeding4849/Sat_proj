@@ -102,3 +102,6 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Old
+old/
