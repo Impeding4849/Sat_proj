@@ -1,0 +1,10 @@
+# pyproject.toml
+
+[project]
+# ... other settings
+dependencies = [
+    "streamlit>=1.30",
+    "pandas",
+    "plotly",
+    "poliastro>=0.18"
+]
