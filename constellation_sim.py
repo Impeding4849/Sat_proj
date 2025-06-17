@@ -5,8 +5,6 @@ from astropy.time import Time, TimeDelta
 from astropy.coordinates import Angle # Import Angle
 from poliastro.bodies import Earth
 from poliastro.twobody import Orbit
-from poliastro.core.propagation import func_twobody # Import func_twobody
-from poliastro.spheroid_location import SpheroidLocation
 
 # --- 1. Define Satellite Hardware Options ---
 # This dictionary holds the trade-space for our satellite hardware.
@@ -277,49 +275,23 @@ def calculate_mean_revisit_time(constellation: list, ground_points: list,
 
         
         if len(point_access_times_jd) > 1:
-            access_time_objects = Time(np.sort(list(set(point_access_times_jd))), format='jd', scale='utc') # Ensure sorted unique times
-            delta_t_values = np.diff(access_time_objects)
-
-            if isinstance(delta_t_values, TimeDelta):
-                # This is the most common and expected case for modern Astropy versions,
-                # where np.diff on a Time array returns a single TimeDelta object.
-                gaps_quantity = delta_t_values
-            elif isinstance(delta_t_values, u.Quantity):
-                # Fallback if it's some other Quantity type (less likely from np.diff(Time))
-                gaps_quantity = delta_t_values
-            elif isinstance(delta_t_values, np.ndarray) and delta_t_values.dtype == object:
-                # This case is reported by you as frequent.
-                # The elements are expected to be TimeDelta objects.
-                # We need to explicitly handle this list/array of TimeDelta objects
-                # by ensuring they are consistently formatted for the Quantity constructor.
-                print("[INFO] np.diff(Time) returned a NumPy array of TimeDelta objects. Processing element-wise.")
-                if len(delta_t_values) > 0:
-                    # Ensure elements are indeed TimeDelta before processing
-                    if all(isinstance(td, TimeDelta) for td in delta_t_values):
-                        # Convert each TimeDelta to a common unit (e.g., days).
-                        # This results in a list of TimeDelta objects, all in the same unit,
-                        # from which u.Quantity can reliably construct a single Quantity array.
-                        gaps_quantity = u.Quantity([td.to(u.day) for td in delta_t_values])
-                    else:
-                        raise TypeError(
-                            "NumPy array (dtype=object) from np.diff(Time) "
-                            "does not contain TimeDelta objects as expected."
-                        )
-                else:
-                    gaps_quantity = u.Quantity([], unit=u.day) # Handle empty array case
-            elif isinstance(delta_t_values, np.ndarray):
-                # Numeric dtype: assumes raw numbers are differences in days (from JD)
-                print("[INFO] np.diff(Time) returned a NumPy array of numbers. Assuming units of days.")
-                gaps_quantity = u.Quantity(delta_t_values, unit=u.day)
-            else:
-                # Fallback for unexpected types
-                raise TypeError(
-                    f"Unexpected type for time differences: {type(delta_t_values)}. "
-                    "Expected Astropy TimeDelta, Quantity, or NumPy array."
-                )
+            # Ensure sorted unique times
+            unique_sorted_jds = np.sort(list(set(point_access_times_jd)))
+            access_time_objects = Time(unique_sorted_jds, format='jd', scale='utc')
             
-            gaps_hr_quantity = gaps_quantity.to(u.hr)
-            all_revisit_gaps.extend(gaps_hr_quantity.value)
+            # np.diff on a Time array returns a numpy array of TimeDelta objects
+            delta_t_values_array = np.diff(access_time_objects)
+
+            if delta_t_values_array.size > 0: # Check if there are any gaps
+                # Corrected approach:
+                # Directly passing a numpy array of TimeDelta objects (with dtype=object)
+                # to u.Quantity can cause a TypeError.
+                # Instead, extract numeric values in a consistent unit (e.g., seconds).
+                delta_t_numeric_values_sec = [td.to_value(u.s) for td in delta_t_values_array]
+                gaps_quantity = u.Quantity(delta_t_numeric_values_sec, unit=u.s)
+                gaps_hr_quantity = gaps_quantity.to(u.hr)
+                all_revisit_gaps.extend(gaps_hr_quantity.value)
+            # else: no gaps to add if delta_t_values_array is empty
         elif len(point_access_times_jd) == 1:
             print(f"    Note: Ground point {i_gp+1} accessed only once. No revisit gap calculated for this point.")
         else:
