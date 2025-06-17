@@ -244,71 +244,41 @@ from PIL import Image
 
 def create_plotly_globe_visualization(propagated_data):
     """
-    Creates Plotly figures for ground tracks on a globe and 3D orbits.
-    Includes distinct markers for initial satellite positions based on type.
+    Creates a 3D Plotly figure for orbits and satellite positions.
+    - Renders one orbit path per plane.
+    - Renders markers for each individual satellite.
+    - Orbit paths are black.
+    - Satellite markers are colored/shaped by type.
     """
-    fig_ground = go.Figure() # For ground tracks (remains unchanged by this request)
     fig_3d_orbit = go.Figure()
 
     # --- Load and Prepare Earth Texture ---
     texture_data = None
     try:
         if _PIL_Image_module: # Check if Pillow's Image module was imported
-            # Load image, convert to grayscale ('L' mode), and then to a NumPy array.
             with _PIL_Image_module.open("earth_map.jpg") as img:
-                # Define a maximum size for the texture
-                max_texture_size = (512, 256) # (width, height)
-                # Access Resampling from the imported Image module
+                max_texture_size = (1024, 768)
                 img.thumbnail(max_texture_size, _PIL_Image_module.Resampling.LANCZOS)
                 texture_data = np.asarray(img.convert('L'))
         else:
-            # This warning is for the case where Pillow is missing, but the app continues.
             st.warning("Pillow library not available. Earth texture cannot be loaded. Using fallback color.")
-            texture_data = None # Ensure texture_data is None
-    except FileNotFoundError: # This handles if earth_map.jpg is missing
+            texture_data = None
+    except FileNotFoundError:
         st.warning("Earth texture file 'earth_map.jpg' not found. Using a fallback color.")
         texture_data = None
-    except Exception as e: # Catch other PIL/IO errors
+    except Exception as e:
         st.warning(f"Could not load or process Earth texture: {e}. Using fallback color.")
         texture_data = None
 
-    # --- Ground Track Plot (Unchanged by this request) ---
-    def rgba_to_plotly_str(rgba_list): # Helper function
+    def rgba_to_plotly_str(rgba_list):
         return f"rgba({rgba_list[0]},{rgba_list[1]},{rgba_list[2]},{rgba_list[3]/255.0})"
 
-    for sat_data in propagated_data:
-        lons = [p[0] for p in sat_data["ground_track_lonlat_deg"]]
-        lats = [p[1] for p in sat_data["ground_track_lonlat_deg"]]
-        color_rgba = SAT_TYPE_COLORS_RGBA.get(sat_data["type"], SAT_TYPE_COLORS_RGBA["default"])
-        plotly_color_str = rgba_to_plotly_str(color_rgba)
-        fig_ground.add_trace(go.Scattergeo(
-            lon=lons, lat=lats, mode='lines',
-            line=dict(width=1.5, color=plotly_color_str),
-            name=sat_data["label"], legendgroup=sat_data["type"],
-        ))
-    fig_ground.update_layout(
-        title_text="<b>Satellite Ground Tracks</b>", showlegend=False,
-        geo=dict(
-            projection_type='orthographic', showland=True, landcolor="rgb(217, 217, 217)",
-            showocean=True, oceancolor="rgb(150, 170, 230)", showcountries=True,
-            countrycolor="rgb(180,180,180)", showlakes=True, lakecolor="rgb(150, 170, 230)",
-            bgcolor='rgba(0,0,0,0)'
-        ), margin={"r":10,"t":60,"l":10,"b":10}, height=600
-    )
-
-    # --- 3D Orbit Plot with Grayscale Texture Sphere ---
-    # --- 3D Orbit Plot with Satellite Markers ---
     R_earth_km = PoliastroEarth.R.to_value(u.km)
     
-    # Earth Sphere (Textured or Fallback)
-    if texture_data is not None: # Texture mapping logic
+    # --- Earth Sphere (Textured or Fallback) ---
+    if texture_data is not None:
         n_lat, n_lon = texture_data.shape
-        
-        # phi is colatitude (from North Pole, 0 to pi), theta is longitude (0 to 2*pi).
-        phi = np.linspace(0, np.pi, n_lat)      # Corresponds to rows (image height)
-        theta = np.linspace(0, 2 * np.pi, n_lon) # Corresponds to columns (image width)
-        
-        # Standard spherical to cartesian coordinate conversion.
+        phi, theta = np.linspace(0, np.pi, n_lat), np.linspace(0, 2 * np.pi, n_lon)
         x_sphere = R_earth_km * np.outer(np.sin(phi), np.cos(theta))
         y_sphere = R_earth_km * np.outer(np.sin(phi), np.sin(theta))
         z_sphere = R_earth_km * np.outer(np.cos(phi), np.ones(n_lon))
@@ -319,13 +289,11 @@ def create_plotly_globe_visualization(propagated_data):
             showscale=False, name="Earth", hoverinfo='skip'
         )
     else: # Fallback sphere
-        n_sphere_points = 100 # A lower resolution is fine for the fallback.
-        phi = np.linspace(0, np.pi, n_sphere_points)
-        theta = np.linspace(0, 2 * np.pi, n_sphere_points)
+        n_sphere_points = 100
+        phi, theta = np.linspace(0, np.pi, n_sphere_points), np.linspace(0, 2 * np.pi, n_sphere_points)
         x_sphere = R_earth_km * np.outer(np.sin(phi), np.cos(theta))
         y_sphere = R_earth_km * np.outer(np.sin(phi), np.sin(theta))
         z_sphere = R_earth_km * np.outer(np.cos(phi), np.ones(n_sphere_points))
-        
         earth_trace = go.Surface(
             x=x_sphere, y=y_sphere, z=z_sphere,
             colorscale=[[0, 'rgb(30,100,200)'], [1, 'rgb(60,150,60)']],
@@ -333,71 +301,53 @@ def create_plotly_globe_visualization(propagated_data):
         )
     fig_3d_orbit.add_trace(earth_trace)
 
-    # Add dummy traces for a clean legend showing satellite types and icons
-    # These traces won't display any actual data points but will generate legend entries.
-    # Sort to ensure a consistent legend order if desired, though dictionary order is usually preserved in modern Python.
+    # --- Add dummy traces for a clean legend ---
     sorted_sat_types = sorted([key for key in SAT_TYPE_SYMBOLS.keys() if key != "default"])
-
     for sat_type_key in sorted_sat_types:
         symbol = SAT_TYPE_SYMBOLS[sat_type_key]
         color_rgba = SAT_TYPE_COLORS_RGBA.get(sat_type_key, SAT_TYPE_COLORS_RGBA["default"])
         plotly_color_str_legend = rgba_to_plotly_str(color_rgba)
         type_display_name = sat_type_key.replace('_', ' ').title()
-
         fig_3d_orbit.add_trace(go.Scatter3d(
-            x=[None], y=[None], z=[None], # No visible data points
-            mode='markers',
-            marker=dict(
-                size=8, # Match actual marker size for legend consistency
-                color=plotly_color_str_legend,
-                symbol=symbol
-            ),
-            name=type_display_name, # Legend entry text
-            legendgroup=sat_type_key # Group for legend handling
+            x=[None], y=[None], z=[None], mode='markers',
+            marker=dict(size=8, color=plotly_color_str_legend, symbol=symbol),
+            name=type_display_name, legendgroup=sat_type_key
         ))
 
-    # Satellite Orbits and Initial Position Markers
-    max_coord_val_overall = R_earth_km # Initialize with Earth radius
-
+    # --- Satellite Orbits and Initial Position Markers ---
+    max_coord_val_overall = R_earth_km
     for sat_data in propagated_data:
-        # Ensure coords and initial_pos_km are numpy arrays for consistent checks
         orbit_path_coords_list = sat_data.get("orbit_xyz_gcrs_km", [])
         coords = np.asarray(orbit_path_coords_list) if orbit_path_coords_list else np.array([])
-
         initial_pos_val = sat_data.get("initial_position_gcrs_km")
         initial_pos_km = np.asarray(initial_pos_val) if initial_pos_val is not None else np.array([])
 
-        # Check for valid data for plotting
         has_orbit_track = coords.ndim == 2 and coords.shape[0] > 0 and coords.shape[1] == 3
         has_initial_pos = initial_pos_km.ndim == 1 and initial_pos_km.shape[0] == 3
         
         if not has_orbit_track and not has_initial_pos:
-            continue # Skip if no visual data for this satellite
+            continue
 
-        # Update max_coord_val_overall for plot ranging
-        if has_orbit_track:
-            max_coord_val_overall = max(max_coord_val_overall, np.max(np.abs(coords)))
-        if has_initial_pos: # Check separately
-            max_coord_val_overall = max(max_coord_val_overall, np.max(np.abs(initial_pos_km)))
+        if has_orbit_track: max_coord_val_overall = max(max_coord_val_overall, np.max(np.abs(coords)))
+        if has_initial_pos: max_coord_val_overall = max(max_coord_val_overall, np.max(np.abs(initial_pos_km)))
 
-        # Get color and symbol for the satellite type
         sat_type = sat_data.get("type", "default")
-        marker_color_rgba = SAT_TYPE_COLORS_RGBA.get(sat_type, SAT_TYPE_COLORS_RGBA["default"]) # Color for marker
+        marker_color_rgba = SAT_TYPE_COLORS_RGBA.get(sat_type, SAT_TYPE_COLORS_RGBA["default"])
         marker_plotly_color_str = rgba_to_plotly_str(marker_color_rgba)
         sat_symbol = SAT_TYPE_SYMBOLS.get(sat_type, SAT_TYPE_SYMBOLS["default"])
         sat_label = sat_data.get("label", "Satellite")
-        orbit_line_color_str = 'rgba(0, 0, 0, 1.0)' # Solid black for all orbit lines
+        orbit_line_color_str = 'rgba(0, 0, 0, 1.0)'  # Set all orbital paths to be black
 
-        # Orbit line trace
+        # Orbit line trace (only plotted if data exists)
         if has_orbit_track:
             fig_3d_orbit.add_trace(go.Scatter3d(
                 x=coords[:, 0], y=coords[:, 1], z=coords[:, 2],
                 mode='lines',
-                line=dict(width=1, color=orbit_line_color_str), # Use fixed black
-                name=f"{sat_label} Orbit",
-                legendgroup=sat_type, # Group by type for potential legend use
-                hoverinfo='skip', # Skip hover for lines to prioritize markers
-                showlegend=False # Explicitly hide orbit lines from legend
+                line=dict(width=1, color=orbit_line_color_str), # Use fixed black color and width
+                name="Orbit Path",
+                legendgroup="orbit_paths",
+                hoverinfo='skip',
+                showlegend=False
             ))
 
         # Initial position marker trace
@@ -405,14 +355,10 @@ def create_plotly_globe_visualization(propagated_data):
             fig_3d_orbit.add_trace(go.Scatter3d(
                 x=[initial_pos_km[0]], y=[initial_pos_km[1]], z=[initial_pos_km[2]],
                 mode='markers',
-                marker=dict(
-                    size=8, # Marker size
-                    color=marker_plotly_color_str, # Use type-specific color for marker
-                    symbol=sat_symbol
-                ),
-                name=f"{sat_label} Initial", # Name for legend/hover
-                legendgroup=sat_type, # Group by type
-                showlegend=False, # Do not add individual satellite markers to the legend
+                marker=dict(size=8, color=marker_plotly_color_str, symbol=sat_symbol),
+                name=f"{sat_label} Initial",
+                legendgroup=sat_type,
+                showlegend=False,
                 hovertext=f"<b>{sat_label} (Initial Position)</b><br>"
                           f"Type: {sat_type.replace('_', ' ').title()}<br>"
                           f"Position (km):<br>X: {initial_pos_km[0]:.1f}<br>Y: {initial_pos_km[1]:.1f}<br>Z: {initial_pos_km[2]:.1f}",
@@ -421,36 +367,30 @@ def create_plotly_globe_visualization(propagated_data):
     
     plot_range = max_coord_val_overall * 1.15
     fig_3d_orbit.update_layout(
-        showlegend=True, # Enable the legend
-        legend_title_text='Satellite Types', # Add a title to the legend
+        showlegend=True,
+        legend_title_text='Satellite Types',
         legend=dict(traceorder='normal', itemsizing='constant', orientation='v',
-                    yanchor='top', y=1, xanchor='right', x=1.05), # Position legend to the top-right
+                    yanchor='top', y=1, xanchor='right', x=1.05),
         scene=dict(
             xaxis=dict(title='X (km)', range=[-plot_range, plot_range], showbackground=False),
             yaxis=dict(title='Y (km)', range=[-plot_range, plot_range], showbackground=False),
             zaxis=dict(title='Z (km)', range=[-plot_range, plot_range], showbackground=False),
             aspectmode='cube',
-            camera_eye=dict(
-                # Target viewpoint: Center of the United States (Latitude: ~38°N, Longitude: ~98°W)
-                x = -0.197, y = -1.405, z = 1.108 # Existing camera view
-            )
+            camera_eye=dict(x=-0.197, y=-1.405, z=1.108)
         ), 
         margin={"r":10,"t":60,"l":10,"b":10}, height=700
     )
     
-    # The function was asked to return fig_3d_orbit, but the original returns fig_ground, fig_3d_orbit
-    # The calling context expects fig_3d_orbit.
-    # The original code: `fig_3d_orbit_plotly = create_plotly_globe_visualization(plotly_data_for_globe)`
-    # This implies it expects only one figure. Let's stick to returning fig_3d_orbit.
     return fig_3d_orbit
 
 def run_simulation_for_optimal_design(optimal_design_series):
     """
     Runs a detailed simulation for the given optimal design parameters.
+    Prepares visualization data with one orbit track per plane.
     """
     if not simulation_modules_available:
         st.error(f"Simulation modules are not available. Cannot run detailed simulation. Error: {simulation_import_error}")
-        return None, None, None, None, {}, None # mrt, quality, accessed_gp, total_gp, params, plotly_data
+        return None, None, None, None, {}, None
 
     sim_params = {
         "duration_days": 2,
@@ -460,143 +400,103 @@ def run_simulation_for_optimal_design(optimal_design_series):
 
     try:
         num_planes = int(optimal_design_series['num_planes'])
-        f_phasing = int(float(optimal_design_series.get('f_phasing', 0))) # Get global f_phasing
+        f_phasing = int(float(optimal_design_series.get('f_phasing', 0)))
 
         plane_definitions = []
-        # satellite_mix_counts = {"high_quality": 0, "medium_quality": 0, "low_quality": 0} # No longer needed for build_custom_constellation
-
-
         for i in range(1, num_planes + 1):
-            alt_val = optimal_design_series.get(f"plane_{i}_alt")
-            inc_val = optimal_design_series.get(f"plane_{i}_inc")
+            alt_val, inc_val = optimal_design_series.get(f"plane_{i}_alt"), optimal_design_series.get(f"plane_{i}_inc")
+            hq, mq, lq = get_int_param_from_series(optimal_design_series, f"plane_{i}_high_q"), get_int_param_from_series(optimal_design_series, f"plane_{i}_med_q"), get_int_param_from_series(optimal_design_series, f"plane_{i}_low_q")
 
-            # Robustly get satellite counts
-            hq = get_int_param_from_series(optimal_design_series, f"plane_{i}_high_q")
-            mq = get_int_param_from_series(optimal_design_series, f"plane_{i}_med_q")
-            lq = get_int_param_from_series(optimal_design_series, f"plane_{i}_low_q")
-
-            if pd.isna(alt_val) or alt_val is None or pd.isna(inc_val) or inc_val is None:
-                st.warning(f"Missing or invalid altitude/inclination for plane {i} (alt: {alt_val}, inc: {inc_val}). Skipping this plane for simulation.")
+            if pd.isna(alt_val) or pd.isna(inc_val):
+                st.warning(f"Missing altitude/inclination for plane {i}. Skipping this plane.")
                 continue
             
-            alt = float(alt_val)
-            inc = float(inc_val)
-
             sats_in_this_plane = hq + mq + lq
             if sats_in_this_plane <= 0:
-                st.info(f"Plane {i} has no satellites; it will be omitted from simulation.")
+                st.info(f"Plane {i} has no satellites; it will be omitted.")
                 continue
 
-            plane_satellite_counts = {
-                "high_quality": hq,
-                "medium_quality": mq,
-                "low_quality": lq
-            }
             plane_definitions.append({
-                "altitude": alt * u.km,
-                "inclination": inc * u.deg,
-                "sats_in_plane": sats_in_this_plane, # Good for validation if build_custom_constellation uses it
-                "satellite_counts_for_plane": plane_satellite_counts
+                "altitude": float(alt_val) * u.km, "inclination": float(inc_val) * u.deg,
+                "sats_in_plane": sats_in_this_plane,
+                "satellite_counts_for_plane": {"high_quality": hq, "medium_quality": mq, "low_quality": lq}
             })
-            # Aggregating global counts is not strictly necessary for build_custom_constellation anymore
-            # but can be kept if used elsewhere (e.g. for a quick check if total sats > 0)
         
         if not plane_definitions:
-            st.error("No valid plane definitions for simulation from the optimal design.")
+            st.error("No valid plane definitions for simulation.")
             return None, None, None, None, sim_params, None
-        
-        if sum(pdef['sats_in_plane'] for pdef in plane_definitions) == 0:
-            st.warning("Optimal design has no satellites. Simulation yields no coverage.")
-            # Let simulation run, it will correctly report 0 accesses.
 
         constellation = build_custom_constellation(plane_definitions=plane_definitions, global_f_phasing=f_phasing)
-
-        lats_g = np.linspace(-60, 60, 5) * u.deg  # 5 latitude points
-        lons_g = np.linspace(-180, 180, 10, endpoint=False) * u.deg  # 10 longitude points
+        lats_g, lons_g = np.linspace(-60, 60, 5) * u.deg, np.linspace(-180, 180, 10, endpoint=False) * u.deg
         ground_grid = [EarthLocation(lon=lon, lat=lat) for lat in lats_g for lon in lons_g]
 
-        num_accessed_gp_sim = 0 # Default to 0
-        # Suppress print statements from calculate_mean_revisit_time
         stdout_capture = io.StringIO()
         with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(stdout_capture):
-            # calculate_mean_revisit_time now returns three values
-            mean_revisit_hr_val, achieved_qualities_list, num_accessed_gp_sim = calculate_mean_revisit_time(
-                constellation,
-                ground_grid,
-                duration_days=sim_params["duration_days"],
-                time_step_minutes=sim_params["time_step_minutes"],
+            mrt_val, qualities, num_accessed = calculate_mean_revisit_time(
+                constellation, ground_grid,
+                duration_days=sim_params["duration_days"], time_step_minutes=sim_params["time_step_minutes"],
                 min_achieved_image_quality=sim_params["min_achieved_image_quality_threshold"]
             )
 
-        simulated_mrt = mean_revisit_hr_val.to_value(u.hr) if hasattr(mean_revisit_hr_val, 'unit') and not np.isnan(mean_revisit_hr_val.value) else np.nan
-        simulated_mean_quality = np.mean(achieved_qualities_list) if achieved_qualities_list else 0.0
-        total_ground_points_in_sim = len(ground_grid)
+        sim_mrt = mrt_val.to_value(u.hr) if hasattr(mrt_val, 'unit') and not np.isnan(mrt_val.value) else np.nan
+        sim_quality = np.mean(qualities) if qualities else 0.0
 
         # --- Plotly Globe Visualization Data Preparation ---
-        propagated_data_for_plotly = [] # For Plotly globe visualization
-
-        if constellation: # Only generate CZML if there's a constellation
+        propagated_data_for_plotly = []
+        if constellation:
             try:
-                # Time settings for propagation (used by both CZML and Plotly data prep)
                 prop_start_time = Time("2025-01-01 00:00:00", scale="utc")
                 prop_duration = sim_params["duration_days"] * u.day
-                prop_end_time = prop_start_time + prop_duration
-                prop_time_step_seconds = sim_params["time_step_minutes"] * 60 
-                num_prop_points = int(prop_duration.to_value(u.s) / prop_time_step_seconds) + 1
-                prop_epochs = prop_start_time + np.linspace(0, prop_duration.to_value(u.s), num_prop_points) * u.s
+                
+                # Visualization-specific propagation parameters
+                viz_time_step_minutes = 2  # As requested: 2-minute time step for visualization
+                viz_prop_time_step_seconds = viz_time_step_minutes * 60
+                num_prop_points_viz = int(prop_duration.to_value(u.s) / viz_prop_time_step_seconds) + 1
+                prop_epochs_viz = prop_start_time + np.linspace(0, prop_duration.to_value(u.s), num_prop_points_viz) * u.s
+
+                # The orbit_track_plotted_for_viz flag is no longer needed
+                # as we want to plot all orbit tracks.
 
                 for i, (orbit, props) in enumerate(constellation):
-                    sat_type_name = props.get('name', 'Sat') # 'name' is like 'high_quality'
-                    sat_label = f"{sat_type_name.replace('_', ' ').title()} {i+1}"
-
-                    # --- Data for Plotly Globe Visualization: Manual Propagation Loop ---
-                    # Instead of orbit.sample(prop_epochs), propagate step-by-step
-                    r_gcrs_list_for_orbit_km = []
-                    for t_epoch in prop_epochs:
-                        # Calculate time delta from the orbit's own epoch
-                        time_delta_from_orbit_epoch = t_epoch - orbit.epoch
-                        # Propagate the orbit to this specific time
-                        propagated_state_at_t = orbit.propagate(time_delta_from_orbit_epoch)
-                        # Get the position vector (x,y,z) in km; .r is a CartesianRepresentation
-                        r_gcrs_km_at_t = propagated_state_at_t.r.to_value(u.km)
-                        r_gcrs_list_for_orbit_km.append(r_gcrs_km_at_t)
+                    # Propagate to get positions for visualization using viz_prop_epochs
+                    r_gcrs_list_km_viz = [orbit.propagate(t - orbit.epoch).r.to_value(u.km) for t in prop_epochs_viz]
+                    positions_gcrs_xyz_km_viz = np.array(r_gcrs_list_km_viz)
                     
-                    # Convert list of [x,y,z] arrays to a single (N_points, 3) numpy array
-                    positions_gcrs_xyz_km = np.array(r_gcrs_list_for_orbit_km)
-
-                    skycoords_gcrs = SkyCoord(x=positions_gcrs_xyz_km[:, 0] * u.km,
-                                              y=positions_gcrs_xyz_km[:, 1] * u.km,
-                                              z=positions_gcrs_xyz_km[:, 2] * u.km,
-                                              frame=GCRS(obstime=prop_epochs),
-                                              representation_type='cartesian')
-                    skycoords_itrs = skycoords_gcrs.transform_to(ITRS(obstime=prop_epochs))
-                    skycoords_itrs_spherical = skycoords_itrs.represent_as('spherical')
-                    lons_deg = skycoords_itrs_spherical.lon.wrap_at(180 * u.deg).deg
-                    lats_deg = skycoords_itrs_spherical.lat.deg
-                    # Use the manually propagated positions for the output
-                    r_gcrs_list_km = positions_gcrs_xyz_km.tolist()
-                    initial_pos_gcrs_km = orbit.r.to_value(u.km) # Get initial GCRS position at orbit epoch
-                    lon_lat_list_deg = np.vstack((lons_deg, lats_deg)).T.tolist()
-
-                    propagated_data_for_plotly.append({
+                    # Ground track calculation (using visualization propagation for consistency)
+                    skycoords_gcrs_viz = SkyCoord(
+                        x=positions_gcrs_xyz_km_viz[:, 0] * u.km,
+                        y=positions_gcrs_xyz_km_viz[:, 1] * u.km,
+                        z=positions_gcrs_xyz_km_viz[:, 2] * u.km,
+                        frame=GCRS(obstime=prop_epochs_viz),
+                        representation_type='cartesian'
+                    )
+                    skycoords_itrs_viz = skycoords_gcrs_viz.transform_to(ITRS(obstime=prop_epochs_viz))
+                    lons_deg_viz = skycoords_itrs_viz.represent_as('spherical').lon.wrap_at(180 * u.deg).deg
+                    lats_deg_viz = skycoords_itrs_viz.represent_as('spherical').lat.deg
+                    
+                    sat_type_name = props.get('name', 'Sat')
+                    sat_label = f"{sat_type_name.replace('_', ' ').title()} {i+1}"
+                    
+                    sat_viz_data = {
                         "label": sat_label,
                         "type": sat_type_name,
-                        "orbit_xyz_gcrs_km": r_gcrs_list_km,
-                        "ground_track_lonlat_deg": lon_lat_list_deg,
-                        "initial_position_gcrs_km": initial_pos_gcrs_km.tolist() # Add initial position
-                    })
+                        "ground_track_lonlat_deg": np.vstack((lons_deg_viz, lats_deg_viz)).T.tolist(),
+                        "initial_position_gcrs_km": orbit.r.to_value(u.km).tolist()
+                    }
+                    
+                    # Populate orbit track for all satellites for visualization
+                    sat_viz_data["orbit_xyz_gcrs_km"] = positions_gcrs_xyz_km_viz.tolist()
+                        
+                    propagated_data_for_plotly.append(sat_viz_data)
 
             except Exception as plotly_data_e:
                 st.warning(f"Could not generate data for Plotly visualization: {plotly_data_e}")
-                propagated_data_for_plotly = [] # Clear if error
+                propagated_data_for_plotly = []
 
-        return (simulated_mrt, simulated_mean_quality, num_accessed_gp_sim, 
-                total_ground_points_in_sim, sim_params, propagated_data_for_plotly)
+        return (sim_mrt, sim_quality, num_accessed, len(ground_grid), sim_params, propagated_data_for_plotly)
 
     except Exception as e:
         st.error(f"An error occurred during simulation: {e}")
-        # import traceback # Uncomment for detailed traceback in Streamlit if needed
-        # st.error(traceback.format_exc())
         return None, None, None, None, sim_params, None
 
 
@@ -608,8 +508,8 @@ st.title("🛰️ Constellation Design Trade-Space Explorer")
 
 # Introductory text moved here
 st.markdown(
-    """Explore optimal imaging satellite constellation designs from various ML models.
-    Define your mission KPPs, simulate performance, and generate MBSE artifacts."""
+    """This application allows you to discover optimal imaging satellite constellation designs by leveraging pre-trained Machine Learning models and multi-objective optimization results along 3D pareto fronts.
+    You can define your mission's Key Performance Parameters (KPPs), visualize trade-offs, simulate the performance of selected designs, and generate Model-Based Systems Engineering (MBSE) artifacts like requirements documents and system models."""
 )
 
 
@@ -623,11 +523,11 @@ def show_learn_more_dialog():
         ---
         **Motivation: Why is This Important?**
 
-        Designing a satellite constellation involves balancing numerous competing factors:
-        *   **Coverage & Revisit Time:** How often can your satellites see a point on Earth? This is crucial for timely data.
-        *   **Image Quality:** What level of detail and accuracy can your sensors provide? Higher quality often means more expensive and heavier satellites.
-        *   **System Cost:** This includes satellite hardware, launch costs, and operational aspects. Budgets are always a primary constraint.
-        *   **Complexity:** More planes and satellites can improve performance but also increase operational complexity and cost.
+        Designing an imaging satellite constellation involves balancing numerous competing factors:
+        * **Coverage & Revisit Time:** How often can your satellites see a point on Earth? This is crucial for timely data.
+        * **Image Quality:** What level of detail and accuracy can your sensors provide? Higher quality often means more expensive and heavier satellites.
+        * **System Cost:** The cost model primarily focuses on satellite hardware and launch expenses. For the scope of this application, detailed simulation and costing of the ground segment (e.g., control stations, data processing centers) and the user segment (e.g., end-user terminals, data dissemination networks) are considered simplified assumptions. However, these segments are conceptually represented in the generated MBSE architectural diagrams to provide a more complete system overview. Budgets remain a primary driver in the optimization.
+        * **Complexity:** More planes and satellites can improve performance but also increase operational complexity and cost.
         Finding the "sweet spot" that meets mission objectives without exceeding budget or complexity is a significant engineering challenge. This tool leverages Machine Learning and simulation to explore this vast design space efficiently.
 
         ---
@@ -635,58 +535,61 @@ def show_learn_more_dialog():
 
         The ML models and optimizers explore designs based on these key parameters:
 
-        *   **Altitude (300 km to 800 km):** This is the height of the satellite's orbit above Earth's surface. Lower altitudes can offer better image resolution but may have shorter satellite lifespans and smaller individual footprints. Higher altitudes cover more ground but may require more powerful sensors.
-        *   **Inclination (25° to 98°):** Inclination is the angle of the orbital plane relative to Earth's equator.
-            *   Low inclinations (e.g., 25°) focus coverage on equatorial regions.
-            *   High inclinations (e.g., 98°, a sun-synchronous orbit) provide coverage over polar regions and can offer consistent lighting conditions for imaging.
-        *   **Satellite Types (High, Medium, Low Quality):** Each plane can be populated with a mix of satellites, differing in:
-            *   **Cost:** High-quality satellites are significantly more expensive.
-            *   **Sensor Quality:** A proxy for imaging performance (e.g., resolution, clarity).
-            *   **Mass:** Heavier satellites incur higher launch costs.
-            *   *(These characteristics are defined in `constellation_sim.py`'s `SATELLITE_OPTIONS`)*
-        *   **Global F-Phasing (0 to 3):** This parameter (from Walker Delta constellation patterns) controls the relative spacing (phase shift) of satellites between different orbital planes, helping to distribute coverage more evenly. It's used in calculating the true anomaly ($\nu_{ij}$) for each satellite:
+        * **Altitude (300 km to 800 km):** This is the height of the satellite's orbit above Earth's surface. Lower altitudes can offer better image resolution but may have shorter satellite lifespans and smaller individual footprints. Higher altitudes cover more ground but may require more powerful sensors.
+        * **Inclination (25° to 98°):** Inclination is the angle of the orbital plane relative to Earth's equator.
+            * Low inclinations (e.g., 25°) focus coverage on equatorial regions.
+            * High inclinations (e.g., 98°, a sun-synchronous orbit) provide coverage over polar regions and can offer consistent lighting conditions for imaging.
+        * **Satellite Types (High, Medium, Low Quality):** Each plane can be populated with a mix of simplified satellite bus characteristics, differing in:
+            * **Cost:** High-quality satellites are significantly more expensive.
+            * **Sensor Quality:** A proxy for imaging performance (e.g., resolution, clarity).
+            * **Mass:** Heavier satellites incur higher launch costs.
+            * *(These characteristics are defined in `constellation_sim.py`'s `SATELLITE_OPTIONS`)*
+        * **Global F-Phasing (0 to 3):** This parameter (from Walker Delta constellation patterns) controls the relative spacing (phase shift) of satellites between different orbital planes, helping to distribute coverage more evenly. It's used in calculating the true anomaly ($\nu_{ij}$) for each satellite:
         
             $$\nu_{ij} = M_j + \frac{p_i \cdot F \cdot 360^\circ}{T}$$
 
-            Where: $\nu_{ij}$ is the true anomaly of the $j^{\text{th}}$ satellite in the $p_i^{\text{th}}$ plane, $M_j$ is the mean anomaly of the $j^{\text{th}}$ satellite within its plane, $p$ is the plane index (0-indexed), $F$ is the global F-phasing value, and $T$ is the total number of satellites in the constellation.
+            Where: $\nu_{ij}$ is the true anomaly of the $j^{\text{th}}$ satellite in the $p_i^{\text{th}}$ plane, $M_j$ is the mean anomaly of the $j^{\text{th}}$ satellite within its plane, $p_i$ is the plane index (0-indexed), $F$ is the global F-phasing value, and $T$ is the total number of satellites in the constellation.
 
-        *   **Orbital Elements Context:** The parameters you can adjust (altitude, inclination, and F-phasing which determines true anomaly) define three of the six classical Keplerian orbital elements needed to fully describe an orbit (the others being eccentricity, longitude of the ascending node, and argument of periapsis). In the current simulation, eccentricity is assumed to be zero (circular orbits), and the longitude of the ascending node and argument of periapsis are set to default or distributed values. Future work could explore varying these remaining three elements to further optimize constellation designs.
+        * **Orbital Elements Context:** The parameters you can adjust (altitude, inclination, and F-phasing which determines true anomaly) define three of the six classical Keplerian orbital elements needed to fully describe an orbit (the others being eccentricity, longitude of the ascending node, and argument of periapsis). In the current simulation, eccentricity is assumed to be zero (circular orbits), and the longitude of the ascending node and argument of periapsis are set to default or distributed values. Future work could explore varying these remaining three elements to further optimize constellation designs.
         ---
         **How it Works (Application Flow):**
 
         1.  **Explore Designs:**
-            *   **Select Model:** Choose an ML model (XGBoost, Neural Network, or Quantum-Hybrid) from the sidebar. These models were pre-trained to predict constellation performance.
-            *   **View Pareto Front:** The 3D plot displays numerous potential designs, showing trade-offs between **Cost**, **Revisit Time**, and **Image Quality**.
-            *   **Define KPPs:** Use the **sidebar sliders** to set your mission's Key Performance Parameters (e.g., max cost, max revisit time, min quality). This filters the designs to show only those meeting your criteria.
+            * **Select Model:** Choose an ML model (XGBoost, Neural Network, or Quantum-Hybrid) from the sidebar. These models were pre-trained to predict constellation performance.
+            * **View Pareto Front:** The 3D plot displays numerous potential designs, showing trade-offs between **Cost**, **Revisit Time**, and **Image Quality**.
+            * **Define KPPs:** Use the **sidebar sliders** to set your mission's Key Performance Parameters (e.g., max cost, max revisit time, min quality). This filters the designs to show only those meeting your criteria.
         2.  **Discover Optimal Design:**
-            *   The tool automatically highlights the **Optimal Compromise** design within your KPPs on the 3D plot.
-            *   Detailed parameters for this optimal design (number of planes, altitude, inclination, satellite types per plane, F-phasing) are displayed in the right-hand panel.
+            * The tool automatically highlights the **Optimal Compromise** design within your KPPs on the 3D plot.
+            * Detailed parameters for this optimal design (number of planes, altitude, inclination, satellite types per plane, F-phasing) are displayed in the right-hand panel.
         3.  **Simulate & Visualize:**
-            *   Click **"Run Simulation for This Design"** to perform a detailed physics-based simulation of the selected optimal design using Poliastro.
-            *   View the simulated performance metrics (revisit time, quality, coverage).
-            *   See the constellation's orbits and ground tracks visualized on an interactive 3D globe.
+            * Click **"Run Simulation for This Design"** to perform a detailed physics-based simulation of the selected optimal design using Poliastro.
+            * View the simulated performance metrics (revisit time, quality, coverage).
+            * See the constellation's orbits and ground tracks visualized on an interactive 3D globe.
         4.  **Generate MBSE Artifacts:**
-            *   **Requirements:** Export a **Requirements Document (CSV)** compatible with tools like DOORS or JAMA.
-            *   **System Model:** Generate a **System Architecture Model (XMI)** for import into SysML modeling tools (e.g., Cameo, Papyrus).
-            *   **Diagram:** View an auto-generated **SysML Block Definition Diagram (BDD)** representing the system architecture.
+            * **Requirements:** Export a **Requirements Document (CSV)** compatible with tools like DOORS or JAMA.
+            * **System Model:** Generate a **System Architecture Model (XMI)** for import into SysML modeling tools (e.g., Cameo, Papyrus).
+            * **Diagram:** View an auto-generated **SysML Block Definition Diagram (BDD)** representing the system architecture.
 
         ---
         **Behind the Scenes (Code Workflow):**
 
-        *   **1. Data Generation (`generate_training_dataset.py`):**
-            *   Thousands of random constellation designs were simulated using `constellation_sim.py` (which wraps Poliastro for orbital mechanics).
-            *   Performance metrics (revisit time, quality) and system costs are calculated for each design. This extensive dataset is saved to `constellation_training_data_cleaned.csv`.
-            *   During this data generation, a key criterion for a design to be considered valid is its ability to access at least **80% of a predefined global grid of ground points**. This grid spans latitudes from **-60° to +60°** and longitudes from **-180° to +180°**, ensuring that the generated designs have a reasonable global coverage capability before being used for ML model training.
-        *   **2. ML Model Training (e.g., `neural_net_model.py`, `quantum_model.py`):**
-            *   The `constellation_training_data_cleaned.csv` dataset serves as the foundation for training several distinct machine learning models. The objective is to create models that can rapidly predict key performance indicators (`mean_revisit_time_hr` and `mean_achieved_quality`) based on the input constellation design parameters.
-            *   **Model Diversity:**
-                *   **XGBoost (`baseline_ml_model.py`):** A gradient boosting framework known for its efficiency, accuracy, and robustness, often performing well on structured/tabular data. It's used here as a strong classical baseline.
-                *   **Keras Neural Network (`neural_net_model.py`):** Deep learning models built with TensorFlow and Keras are employed to capture potentially complex, non-linear relationships within the design space. `KerasTuner` is utilized for automated hyperparameter optimization (e.g., number of layers, neurons per layer, activation functions, learning rate) to find the best performing neural network architecture.
-                *   **Quantum-Hybrid Model (`quantum_model.py`):** This explores a more novel approach by combining classical neural network layers with a quantum circuit implemented using PennyLane and TensorFlow Quantum. The classical layers pre-process the input data, which is then encoded into a quantum state. The quantum circuit, with tunable parameters (like the number of qubits and quantum layers, also optimized using `KerasTuner`), performs transformations, and its measurements are post-processed by further classical layers to produce the final predictions. This model investigates the potential of quantum machine learning techniques for this complex optimization problem.
-            *   **Training Process:** Each model type is trained to predict the two target variables. Feature scaling (using `StandardScaler`) is applied to the input features, and target variables are also scaled before training the neural network and quantum-hybrid models to aid in convergence and performance.
-            *   **Saved Artifacts:** The trained models, along with their specific feature and target scalers, and optimized hyperparameters (for Keras-based models) are saved to disk (e.g., `.keras` files for models, `.joblib` for scalers and hyperparameters). This allows the optimizer and this application to load and use them without retraining.
-        *   **3. Multi-Objective Optimization (e.g., `nn_optimizer.py`, `quantum_optimizer.py`):**
-            *   A pre-trained ML model is loaded. The NSGA-II genetic algorithm explores the design space (number of planes, altitudes, inclinations, satellite mix, F-phasing) to find Pareto-optimal fronts, balancing cost, revisit time, and quality. These results are saved to CSVs.
+        * **1. Data Generation (`generate_training_dataset.py`):**
+            * Thousands of random constellation designs were simulated using `constellation_sim.py` (which wraps Poliastro for orbital mechanics).
+            * Performance metrics (revisit time, quality) and system costs are calculated for each design. This extensive dataset is saved to `constellation_training_data_cleaned.csv`.
+            * During this data generation, a key criterion for a design to be considered valid is its ability to access at least **80% of a predefined global grid of ground points**. This grid spans latitudes from **-60° to +60°** and longitudes from **-180° to +180°**, ensuring that the generated designs have a reasonable global coverage capability before being used for ML model training.
+        * **2. ML Model Training (e.g., `neural_net_model.py`, `quantum_model.py`):**
+            * The `constellation_training_data_cleaned.csv` dataset serves as the foundation for training several distinct machine learning models. The objective is to create models that can rapidly predict key performance indicators (`mean_revisit_time_hr` and `mean_achieved_quality`) based on the input constellation design parameters.
+            * **Model Diversity:**
+                * **XGBoost (`baseline_ml_model.py`):** A gradient boosting framework known for its efficiency, accuracy, and robustness, often performing well on structured/tabular data. It's used here as a strong classical baseline.
+                * **Keras Neural Network (`neural_net_model.py`):** Deep learning models built with TensorFlow and Keras are employed to capture potentially complex, non-linear relationships within the design space. `KerasTuner` is utilized for automated hyperparameter optimization (e.g., number of layers, neurons per layer, activation functions, learning rate) to find the best performing neural network architecture.
+                * **Quantum-Hybrid Model (`quantum_model.py`):** This explores a more novel approach by combining classical neural network layers with a quantum circuit implemented using PennyLane and TensorFlow Quantum. The classical layers pre-process the input data, which is then encoded into a quantum state. The quantum circuit, with tunable parameters (like the number of qubits and quantum layers, also optimized using `KerasTuner`), performs transformations, and its measurements are post-processed by further classical layers to produce the final predictions. This model investigates the potential of quantum machine learning techniques for this complex optimization problem.
+            * **Training Process:** Each model type is trained to predict the two target variables. Feature scaling (using `StandardScaler`) is applied to the input features, and target variables are also scaled before training the neural network and quantum-hybrid models to aid in convergence and performance.
+            * **Saved Artifacts:** The trained models, along with their specific feature and target scalers, and optimized hyperparameters (for Keras-based models) are saved to disk (e.g., `.keras` files for models, `.joblib` for scalers and hyperparameters). This allows the optimizer and this application to load and use them without retraining.
+        * **3. Multi-Objective Optimization (e.g., `nn_optimizer.py`, `quantum_optimizer.py`):**
+            * A pre-trained ML model is loaded. The NSGA-II genetic algorithm explores the design space (number of planes, altitudes, inclinations, satellite mix, F-phasing) to find **Pareto-optimal fronts**.
+            * A Pareto front represents a set of solutions where no single objective (e.g., cost, revisit time, quality) can be improved without worsening at least one other objective. In essence, these are the "best possible" trade-offs.
+            * The optimizer balances cost (to be minimized), revisit time (to be minimized), and quality (to be maximized) to identify these fronts. The "Optimal Compromise" point highlighted in the application is a single solution chosen from these fronts that offers a balanced performance across all objectives, especially after filtering by your KPPs.
+            * These optimization results, containing many such Pareto-optimal solutions, are saved to CSV files (e.g., `nn_optimizer_pareto_fronts.csv`).
     """) # End of the st.markdown call within the dialog function
 
 # --- Global Constants for Model Selection and Metrics ---
@@ -810,7 +713,14 @@ if all_results_df is not None:
         if not selected_model_metrics.empty:
             display_metrics = selected_model_metrics[['target_variable', 'mse', 'r2']].copy()
             display_metrics.columns = ['Target Variable', 'MSE', 'R²']
-            st.sidebar.dataframe(display_metrics, hide_index=True)
+            st.sidebar.dataframe(
+                display_metrics,
+                hide_index=True,
+                column_config={
+                    "MSE": st.column_config.NumberColumn(format="%.3f"),
+                    "R²": st.column_config.NumberColumn(format="%.3f")
+                }
+            )
         else:
             st.sidebar.warning(f"No metrics found for '{st.session_state.selected_model_name}'.")
     
@@ -823,12 +733,14 @@ if all_results_df is not None:
 
     with col1:
         st.subheader("Interactive Pareto Front Visualization")
+        st.info("Explore optimal constellation designs along a Pareto front by balancing cost, revisit time, and image quality based on the KPPs in the sidebar.")
         fig = create_interactive_plot(valid_points, invalid_points, best_compromise)
         st.plotly_chart(fig, use_container_width=True)
 
         # --- Globe Visualization Section ---
         if simulation_modules_available: # Check if Poliastro etc. are loaded
-            st.subheader("Interactive Orbit Visualization for Initial Parameters")
+            st.subheader("Interactive Initial Orbits Visualization")
+            st.info("Click 'Run Simulation' to view the simulated satellite orbits and their initial positions in 3D space for the selected optimal design.")
 
             plotly_data_for_globe = []
             info_message_globe = None
