@@ -110,24 +110,30 @@ The application and its underlying models follow a comprehensive workflow:
         *   Generates a System Architecture Model (XMI).
         *   Displays an auto-generated SysML Block Definition Diagram (BDD).
 
-## Visualizations (Examples)
-
-*(Please replace the bracketed text below with actual screenshots or GIFs from your project.)*
+## Example Usage and Visualizations:
 
 1.  **Streamlit Application Interface:**
-    `!Streamlit App Interface`
+
+    ![app interface](assets/streamlit_app_interface.png)
+
     *Description: The main dashboard allowing users to define constraints and explore constellation designs.*
 
 2.  **Interactive Pareto Front Explorer:**
-    `!Interactive Pareto Plot`
+
+    ![pareto fronts](assets/interactive_pareto_plot.mp4)
+
     *Description: Users can navigate the 3D trade-space of cost, revisit time, and quality. Points are colored by the number of orbital planes.*
 
 3.  **3D Orbit Visualization:**
-    `!3D Orbit Visualization`
+
+    ![orbits 3d](assets/3d_orbit_visualization.mp4)
+
     *Description: An interactive 3D view of the selected constellation's orbits around the Earth, with satellites colored by type.*
 
 4.  **SysML System Architecture Diagram (BDD):**
-    `!System Architecture BDD`
+
+    ![sysml bdd](assets/system_architecture_bdd.png)
+
     *Description: A SysML BDD illustrating the system's components (e.g., Constellation, Orbital Planes, Satellite Types, Ground Segment) and their relationships.*
 
 ## MBSE Artifacts
