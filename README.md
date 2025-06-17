@@ -120,13 +120,13 @@ The application and its underlying models follow a comprehensive workflow:
 
 2.  **Interactive Pareto Front Explorer:**
 
-    ![pareto fronts](assets/interactive_pareto_plot.mp4)
+    ![pareto fronts](assets/interactive_pareto_plot.gif)
 
     *Description: Users can navigate the 3D trade-space of cost, revisit time, and quality. Points are colored by the number of orbital planes.*
 
 3.  **3D Orbit Visualization:**
 
-    ![orbits 3d](assets/3d_orbit_visualization.mp4)
+    ![orbits 3d](assets/3d_orbit_visualization.gif)
 
     *Description: An interactive 3D view of the selected constellation's orbits around the Earth, with satellites colored by type.*
 
